@@ -6,39 +6,39 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/Cody-Kao/crud-sql/db"
 	"github.com/gorilla/mux"
+	"gorm.io/gorm"
 )
 
-//var tmp *template.Template = template.Must(template.ParseFiles("templates/index.html"))
-
-type Store struct {
-	Storage map[string]*Book `json:"storage"`
-}
-
-type Book struct {
-	Author string `json:"author"`
-	Price  int    `json:"price"`
-}
-
-// in memory storage
-var store Store = Store{map[string]*Book{"Lord Of Rings": {Author: "Tolkien", Price: 100},
-	"The Witcher": {Author: "Andrzej", Price: 200}}}
+var DB *gorm.DB
+var oneBook db.Book
+var multiBook []db.Book
 
 func checkBook(bookName string) bool {
-	if _, ok := store.Storage[bookName]; ok {
-		return true
-	}
-	return false
+	res := DB.Where("name = ?", bookName).First(&oneBook)
+
+	return res.Error == nil
 }
 
 func listAllBooks(w http.ResponseWriter) {
+	res := DB.Order("id asc").Find(&multiBook)
 	// write this line to make browser treat them as json
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(store)
+	json.NewEncoder(w).Encode(multiBook)
+	fmt.Println("selected rows:", res.RowsAffected)
 }
 
 func ReadAll(w http.ResponseWriter, r *http.Request) {
+	var err error
+	if DB == nil {
+		DB, err = db.ConnectDB()
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	listAllBooks(w)
 }
 
@@ -54,7 +54,12 @@ func Create(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "error occurs: %s", err)
 		return
 	}
-	store.Storage[bookName] = &Book{Author: author, Price: price}
+
+	res := DB.Create(&db.Book{Name: bookName, Author: author, Price: price})
+	if res.Error != nil {
+		fmt.Fprint(w, "Error when create new data", err)
+		return
+	}
 	listAllBooks(w)
 }
 
@@ -64,9 +69,10 @@ func Search(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "book %s is not in store", bookName)
 		return
 	}
+	DB.Where("name = ?", bookName).First(&oneBook)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(store.Storage[bookName])
+	json.NewEncoder(w).Encode(oneBook)
 }
 
 func Update(w http.ResponseWriter, r *http.Request) {
@@ -81,7 +87,12 @@ func Update(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "error occurs: %s", err)
 		return
 	}
-	store.Storage[bookName].Price = newPrice
+	res := DB.Model(&oneBook).Where("name = ?", bookName).Update("price", newPrice)
+	if res.Error != nil {
+		fmt.Fprint(w, "update error")
+		return
+	}
+
 	listAllBooks(w)
 }
 
@@ -91,6 +102,10 @@ func Delete(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "book %s is not in store", bookName)
 		return
 	}
-	delete(store.Storage, bookName)
+	res := DB.Where("name = ?", bookName).Delete(&oneBook)
+	if res.Error != nil {
+		fmt.Fprint(w, "delete error")
+		return
+	}
 	listAllBooks(w)
 }
