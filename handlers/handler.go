@@ -15,6 +15,10 @@ var DB *gorm.DB
 var oneBook db.Book
 var multiBook []db.Book
 
+func SetDB(db *gorm.DB) {
+	DB = db
+}
+
 func checkBook(bookName string) bool {
 	res := DB.Where("name = ?", bookName).First(&oneBook)
 
@@ -31,14 +35,6 @@ func listAllBooks(w http.ResponseWriter) {
 }
 
 func ReadAll(w http.ResponseWriter, r *http.Request) {
-	var err error
-	if DB == nil {
-		DB, err = db.ConnectDB()
-		if err != nil {
-			panic(err)
-		}
-	}
-
 	listAllBooks(w)
 }
 
