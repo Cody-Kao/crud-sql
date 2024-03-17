@@ -1,13 +1,11 @@
 package db
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
-
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 )
 
 type Config struct {
@@ -44,16 +42,16 @@ func getConfig() (*Config, error) {
 	return config, nil
 }
 
-func ConnectDB() (*gorm.DB, error) {
+func ConnectDB() (*sql.DB, error) {
 	config, err := getConfig()
 	if err != nil {
 		return nil, err
 	}
 	password := os.Getenv("POSTGRES_PASSWORD")
 	fmt.Println("password:", password)
-	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=disable TimeZone=Asia/Taipei",
-		config.Addr, config.UserName, password, config.DbName, config.Port)
-	DB, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable TimeZone=Asia/Taipei",
+		config.Addr, config.Port, config.UserName, password, config.DbName)
+	DB, err := sql.Open("postgres", dsn)
 	if err != nil {
 		return nil, err
 	}

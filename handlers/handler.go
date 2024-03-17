@@ -1,37 +1,69 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 
+	_ "github.com/lib/pq"
+
 	"github.com/Cody-Kao/crud-sql/db"
 	"github.com/gorilla/mux"
-	"gorm.io/gorm"
 )
 
-var DB *gorm.DB
-var oneBook db.Book
-var multiBook []db.Book
+var DB *sql.DB
 
-func SetDB(db *gorm.DB) {
+// query statement
+// make sure to close sql.Stmt after using
+var QueryOne *sql.Stmt
+var QueryAll *sql.Stmt
+var CreateRow *sql.Stmt
+var UpdateRow *sql.Stmt
+var DeleteRow *sql.Stmt
+
+func SetDB(db *sql.DB) {
 	DB = db
+	// Initialize prepared statements
+	QueryOne, _ = DB.Prepare("SELECT * FROM book WHERE name = $1")
+	QueryAll, _ = DB.Prepare("SELECT * FROM book ORDER BY id")
+	CreateRow, _ = DB.Prepare(`INSERT INTO book (name, author, price)
+		 					VALUES($1, $2, $3) RETURNING id`)
+	UpdateRow, _ = DB.Prepare("UPDATE book SET price = $1 WHERE name = $2 RETURNING id")
+	DeleteRow, _ = DB.Prepare("DELETE FROM book WHERE name = $1 RETURNING id")
 }
 
 func checkBook(bookName string) bool {
-	res := DB.Where("name = ?", bookName).First(&oneBook)
+	err := QueryOne.QueryRow(bookName).Scan()
 
-	return res.Error == nil
+	return err != nil
 }
 
 func listAllBooks(w http.ResponseWriter) {
-	res := DB.Order("id asc").Find(&multiBook)
+	rows, err := QueryAll.Query()
+	if err != nil {
+		fmt.Fprint(w, "error occurs when fetch all books", err)
+		return
+	}
+
+	var id int
+	var name string
+	var author string
+	var price int
+	var multiBook []db.Book
+	for rows.Next() {
+		err := rows.Scan(&id, &name, &author, &price)
+		if err != nil {
+			fmt.Fprint(w, "error occurs when scan book data", err)
+			return
+		}
+		multiBook = append(multiBook, db.Book{ID: id, Name: name, Author: author, Price: price})
+	}
 	// write this line to make browser treat them as json
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(multiBook)
-	fmt.Println("selected rows:", res.RowsAffected)
 }
 
 func ReadAll(w http.ResponseWriter, r *http.Request) {
@@ -50,12 +82,13 @@ func Create(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "error occurs: %s", err)
 		return
 	}
-
-	res := DB.Create(&db.Book{Name: bookName, Author: author, Price: price})
-	if res.Error != nil {
+	var primaryKey int
+	err = CreateRow.QueryRow(&bookName, &author, &price).Scan(&primaryKey)
+	if err != nil {
 		fmt.Fprint(w, "Error when create new data", err)
 		return
 	}
+	fmt.Printf("book %s created with primary key of %d\n", bookName, primaryKey)
 	listAllBooks(w)
 }
 
@@ -65,7 +98,17 @@ func Search(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "book %s is not in store", bookName)
 		return
 	}
-	DB.Where("name = ?", bookName).First(&oneBook)
+	var id int
+	var name string
+	var author string
+	var price int
+	var oneBook db.Book
+	err := QueryOne.QueryRow(bookName).Scan(&id, &name, &author, &price)
+	if err != nil {
+		fmt.Fprint(w, "error occurs when query one book", err)
+		return
+	}
+	oneBook = db.Book{ID: id, Name: name, Author: author, Price: price}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(oneBook)
@@ -83,12 +126,13 @@ func Update(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "error occurs: %s", err)
 		return
 	}
-	res := DB.Model(&oneBook).Where("name = ?", bookName).Update("price", newPrice)
-	if res.Error != nil {
-		fmt.Fprint(w, "update error")
+	var primaryKey int
+	err = UpdateRow.QueryRow(newPrice, bookName).Scan(&primaryKey)
+	if err != nil {
+		fmt.Fprint(w, "update error", err)
 		return
 	}
-
+	fmt.Printf("%dth row is updated!\n", primaryKey)
 	listAllBooks(w)
 }
 
@@ -98,10 +142,12 @@ func Delete(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "book %s is not in store", bookName)
 		return
 	}
-	res := DB.Where("name = ?", bookName).Delete(&oneBook)
-	if res.Error != nil {
-		fmt.Fprint(w, "delete error")
+	var primaryKey int
+	err := DeleteRow.QueryRow(bookName).Scan(&primaryKey)
+	if err != nil {
+		fmt.Fprint(w, "delete error", err)
 		return
 	}
+	fmt.Printf("%dth row is deleted", primaryKey)
 	listAllBooks(w)
 }

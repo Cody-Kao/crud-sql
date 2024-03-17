@@ -20,7 +20,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
+	fmt.Println("Db connection established")
 	// Set up signal handling
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
@@ -32,11 +32,17 @@ func main() {
 	go func() {
 		<-interrupt
 		fmt.Println("Shutting down...")
-		sqlDB, err := DB.DB()
+		handlers.QueryOne.Close()
+		handlers.QueryAll.Close()
+		handlers.CreateRow.Close()
+		handlers.UpdateRow.Close()
+		handlers.DeleteRow.Close()
+		fmt.Println("All query statements are closed")
+
+		err := DB.Close()
 		if err != nil {
 			log.Fatal("Error when closing DB", err)
 		}
-		sqlDB.Close()
 		fmt.Println("DB closed gracefully")
 		cancel()
 	}()
